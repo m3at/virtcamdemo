@@ -47,9 +47,7 @@ table_colors = np.array(
         [23, 14, 12],
     ],
     dtype=np.uint8,
-)[
-    :, ::-1
-]  # RGB to BGR
+)
 MAX_COLOR = table_colors.shape[0] - 1
 
 
@@ -123,15 +121,17 @@ class ParticleSystem:
 
 
 def main() -> None:
+    # Setup the virtual webcam
     ctx = pyvirtualcam.Camera(
         width=camgear_options["CAP_PROP_FRAME_WIDTH"],
         height=camgear_options["CAP_PROP_FRAME_HEIGHT"],
         fps=30,
     )
-    with ctx as cam:
-        time.sleep(1.2)
 
+    with ctx as cam:
         # Open webcam stream
+        # It fails sometimes, so just retry
+        time.sleep(1.2)
         for i in range(3):
             try:
                 stream = CamGear(source=1, logging=False, colorspace="COLOR_BGR2RGB", **camgear_options).start()
@@ -143,8 +143,9 @@ def main() -> None:
             logger.error("Couldn't initialize camera")
             sys.exit("nop")
 
-        logger.info(f"Using virtual camera: {cam.device}")  # type:ignore
+        logger.info(f"Using virtual camera: {cam.device}")
 
+        # Hand detector, the fastest one will do
         hand_detection = mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=2,
@@ -152,6 +153,7 @@ def main() -> None:
             model_complexity=0,
         )
 
+        # Setup one particle system per hand
         party_left = ParticleSystem()
         party_right = ParticleSystem()
         party = [party_left, party_right]
@@ -164,21 +166,19 @@ def main() -> None:
                 logger.error("Invalid input frame")
                 break
 
+            # Detect hands keypoints
             in_frame.flags.writeable = False
             hands = hand_detection.process(in_frame)
-
             in_frame.flags.writeable = True
-            in_frame = cv2.cvtColor(in_frame, cv2.COLOR_RGB2BGR)  # type:ignore
 
+            # Draw if hands are detected
             if hands.multi_hand_landmarks:
                 for (hand_landmarks, side) in zip(hands.multi_hand_landmarks, hands.multi_handedness):
                     index = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-                    pp = party[side.classification[0].index]
-                    pp(in_frame, index.x, index.y)
+                    party[side.classification[0].index](in_frame, index.x, index.y)
 
-            in_frame = cv2.cvtColor(in_frame, cv2.COLOR_BGR2RGB)  # type:ignore
-            cam.send(in_frame)  # type:ignore
-            cam.sleep_until_next_frame()  # type:ignore
+            cam.send(in_frame)
+            cam.sleep_until_next_frame()
 
     logger.info("Quit")
 
@@ -186,7 +186,7 @@ def main() -> None:
 if __name__ == "__main__":
     # Get system arguments
     parser = argparse.ArgumentParser(
-        description="replace_me",
+        description="Start a virtual webcam and add fire effect to index fingers.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
